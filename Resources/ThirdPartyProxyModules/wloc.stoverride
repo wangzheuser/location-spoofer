@@ -27,8 +27,8 @@ http:
 
 script-providers:
   WLOC.Location:
-    url: https://gh-proxy.org/https://raw.githubusercontent.com/xweiba/location-spoofer/main/ThirdParty/WlocScripts/dist/v1/wloc.js
+    url: https://gh-proxy.org/https://raw.githubusercontent.com/Yu9191/wloc/refs/heads/main/dist/wloc.js
     interval: 86400
   WLOC.Settings:
-    url: https://gh-proxy.org/https://raw.githubusercontent.com/xweiba/location-spoofer/main/ThirdParty/WlocScripts/dist/v1/wloc-settings.js
+    url: https://gh-proxy.org/https://raw.githubusercontent.com/Yu9191/wloc/refs/heads/main/dist/wloc-settings.js
     interval: 86400
