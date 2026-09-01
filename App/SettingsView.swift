@@ -25,6 +25,7 @@ struct SettingsView: View {
     @ObservedObject private var thirdPartyProxy = ThirdPartyProxyManager.shared
     @ObservedObject private var thirdPartyClient = ThirdPartyProxyClientStore.shared
     @ObservedObject private var motionSimulation = MotionSimulationStore.shared
+    @ObservedObject private var randomRadius = RandomRadiusStore.shared
     @ObservedObject private var moduleSource = ThirdPartyModuleSourceStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var activeTip: TipKind?
@@ -85,15 +86,23 @@ struct SettingsView: View {
             }
 
             Section("定位模拟") {
-                Toggle("运动状态模拟", isOn: motionSimulationBinding)
-                    .disabled(
-                        modeOperationRunning ||
-                        actions.state.isBusy ||
-                        thirdPartyProxy.isRequesting
-                    )
-                Text("实验性功能，默认关闭。开启后会同时模拟定位响应中的运动状态。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                if runtimeMode.mode == .localWiFi {
+                    Toggle("运动状态模拟", isOn: motionSimulationBinding)
+                        .disabled(
+                            modeOperationRunning ||
+                            actions.state.isBusy ||
+                            thirdPartyProxy.isRequesting
+                        )
+                    Text("实验性功能，默认关闭。开启后会同时模拟定位响应中的运动状态。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else if runtimeMode.mode == .thirdParty {
+                    Toggle("随机扰动", isOn: randomRadiusBinding)
+                        .disabled(modeOperationRunning || actions.state.isBusy)
+                    Text("开启后，下次同步坐标时会给目标点添加随机偏移（默认半径 50 米），避免位置固定在同一点。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if runtimeMode.mode == .thirdParty {
@@ -257,16 +266,6 @@ struct SettingsView: View {
         } message: {
             Text("当前虚拟定位和本地代理将停止。App 会删除钥匙串中的设备 CA、立即生成新证书，并打开安装与信任引导。你还需要前往 iOS「设置 → 通用 → VPN 与设备管理」手动删除旧证书，然后重新下载安装并完全信任新证书。")
         }
-        .task(id: runtimeMode.mode) {
-            guard runtimeMode.mode == .thirdParty, !modeOperationRunning else { return }
-            if !(await thirdPartyProxy.refreshAdvancedFeatureAvailability()) {
-                disableUnsupportedThirdPartyMotionSimulation()
-            }
-        }
-        .onChange(of: thirdPartyProxy.moduleUpdateRecommended) { updateRecommended in
-            guard updateRecommended else { return }
-            disableUnsupportedThirdPartyMotionSimulation()
-        }
     }
 
     private func valueRow(_ title: String, value: String) -> some View {
@@ -377,48 +376,15 @@ struct SettingsView: View {
         Binding(
             get: { motionSimulation.isEnabled },
             set: { enabled in
-                if runtimeMode.mode == .localWiFi {
-                    proxy.applyMotionSimulation(enabled)
-                    return
-                }
-                guard thirdPartyProxy.activeSettings?.success == true else {
-                    guard enabled else {
-                        motionSimulation.setEnabled(false)
-                        return
-                    }
-                    modeOperationRunning = true
-                    Task { @MainActor in
-                        if await thirdPartyProxy.refreshAdvancedFeatureAvailability() {
-                            motionSimulation.setEnabled(true)
-                        } else {
-                            presentMotionSimulationModuleUpdateAlert()
-                        }
-                        modeOperationRunning = false
-                    }
-                    return
-                }
-                modeOperationRunning = true
-                Task { @MainActor in
-                    do {
-                        _ = try await thirdPartyProxy.updateMotionSimulation(enabled)
-                        motionSimulation.setEnabled(enabled)
-                    } catch {
-                        RuntimeLogger.error(
-                            "APP",
-                            "ThirdPartyProxy",
-                            "同步运动状态设置失败",
-                            error: error,
-                            details: ["当前客户端": thirdPartyClient.selectedClient.name]
-                        )
-                        if error as? ThirdPartyProxyError == .moduleOutdated {
-                            presentMotionSimulationModuleUpdateAlert()
-                        } else {
-                            setup.requestThirdPartySetup(message: error.localizedDescription)
-                        }
-                    }
-                    modeOperationRunning = false
-                }
+                proxy.applyMotionSimulation(enabled)
             }
+        )
+    }
+
+    private var randomRadiusBinding: Binding<Bool> {
+        Binding(
+            get: { randomRadius.isEnabled },
+            set: { randomRadius.setEnabled($0) }
         )
     }
 
@@ -441,12 +407,6 @@ struct SettingsView: View {
             Text("仅影响之后复制和重新导入的模块地址；已安装模块需要重新导入后切换来源。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-
-            if thirdPartyProxy.moduleUpdateRecommended {
-                Text("当前模块版本较旧，基础坐标功能仍可继续使用。重新导入最新模块后可使用版本检测和运动状态模拟。")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-            }
 
             if let verificationText = thirdPartyClient.selectedClient.verificationText {
                 HStack {
@@ -548,8 +508,7 @@ struct SettingsView: View {
                 runtimeMode.setMode(.thirdParty)
                 if runtimeMode.isInitialized(.thirdParty) {
                     do {
-                        _ = try await thirdPartyProxy.validateConnection()
-                        refreshThirdPartyAdvancedFeatures()
+                        _ = try await thirdPartyProxy.query()
                         proxyOperationAlertTitle = "模式已切换"
                         proxyOperationError = "第三方代理模式检测通过。请关闭 Wi-Fi 中的 127.0.0.1:8888 手动代理，避免双重拦截。"
                     } catch {
@@ -591,8 +550,7 @@ struct SettingsView: View {
         let startedAt = Date()
         Task { @MainActor in
             do {
-                _ = try await thirdPartyProxy.validateConnection()
-                refreshThirdPartyAdvancedFeatures()
+                _ = try await thirdPartyProxy.query()
                 RuntimeLogger.info("APP", "ThirdPartyProxy", "设置页第三方连接检测通过", details: [
                     "当前客户端": client.name,
                     "请求动作": "WLOC query",
@@ -616,25 +574,6 @@ struct SettingsView: View {
                 openThirdPartySetup(for: error)
             }
         }
-    }
-
-    private func refreshThirdPartyAdvancedFeatures() {
-        Task { @MainActor in
-            if !(await thirdPartyProxy.refreshAdvancedFeatureAvailability()) {
-                disableUnsupportedThirdPartyMotionSimulation()
-            }
-        }
-    }
-
-    private func presentMotionSimulationModuleUpdateAlert() {
-        disableUnsupportedThirdPartyMotionSimulation()
-        proxyOperationAlertTitle = "无法开启运动状态模拟"
-        proxyOperationError = "当前模块脚本不支持运动状态模拟，请重新导入最新模块脚本后再开启。基础坐标功能仍可继续使用。"
-    }
-
-    private func disableUnsupportedThirdPartyMotionSimulation() {
-        guard runtimeMode.mode == .thirdParty else { return }
-        motionSimulation.setEnabled(false)
     }
 
     private func openThirdPartySetup(for error: Error) {

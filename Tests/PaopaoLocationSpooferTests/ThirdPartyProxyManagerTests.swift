@@ -40,42 +40,15 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         XCTAssertEqual(manager.connectionState, .connected(active: true))
     }
 
-    func testVersionEndpointRequiresProtocolAndCapabilities() async throws {
-        let requester = FakeThirdPartyRequester(body: #"{"success":false,"error":"无已保存的坐标"}"#)
-        let manager = ThirdPartyProxyManager(requester: requester)
-
-        let version = try await manager.validateVersion()
-
-        XCTAssertEqual(requester.lastURL?.path, "/wloc-settings/version")
-        XCTAssertEqual(version.moduleVersion, "1.0.0")
-        XCTAssertTrue(version.isCompatible)
-    }
-
     func testConnectionUsesLegacySaveQueryEndpoint() async throws {
         let requester = FakeThirdPartyRequester(body: #"{"success":false,"error":"无已保存的坐标"}"#)
         let manager = ThirdPartyProxyManager(requester: requester)
 
-        let response = try await manager.validateConnection()
+        let response = try await manager.query()
 
         XCTAssertFalse(response.success)
-        XCTAssertFalse(manager.moduleUpdateRecommended)
         XCTAssertEqual(requester.requestedURLs.map(\.path), ["/wloc-settings/save"])
         XCTAssertEqual(requester.requestedURLs.first?.query, "action=query")
-    }
-
-    func testMissingVersionDisablesOnlyAdvancedFeatures() async {
-        let requester = FakeThirdPartyRequester(
-            body: #"{"success":false,"error":"无已保存的坐标"}"#,
-            versionBody: "not-json"
-        )
-        let manager = ThirdPartyProxyManager(requester: requester)
-
-        let isAvailable = await manager.refreshAdvancedFeatureAvailability()
-
-        XCTAssertFalse(isAvailable)
-        XCTAssertTrue(manager.moduleUpdateRecommended)
-        XCTAssertEqual(manager.connectionState, .unknown)
-        XCTAssertEqual(requester.requestedURLs.map(\.path), ["/wloc-settings/version"])
     }
 
     func testLegacyModuleCanStillSaveBasicCoordinates() async throws {
@@ -93,16 +66,25 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
             wgs84.longitude,
             wgs84.latitude
         )
-        let requester = FakeThirdPartyRequester(body: body, versionBody: "not-json")
+        let requester = FakeThirdPartyRequester(body: body)
         let manager = ThirdPartyProxyManager(requester: requester)
 
         let response = try await manager.save(favorite)
 
         XCTAssertTrue(response.success)
-        XCTAssertFalse(manager.moduleUpdateRecommended)
         XCTAssertEqual(manager.connectionState, .connected(active: true))
         XCTAssertEqual(requester.requestedURLs.map(\.path), ["/wloc-settings/save"])
-        XCTAssertNil(requester.requestedURLs.first?.query)
+        let queryComponents = URLComponents(
+            url: try XCTUnwrap(requester.requestedURLs.first),
+            resolvingAgainstBaseURL: false
+        )
+        let values = Dictionary(
+            uniqueKeysWithValues: (queryComponents?.queryItems ?? []).map { ($0.name, $0.value ?? "") }
+        )
+        XCTAssertEqual(values["lon"], String(format: "%.8f", locale: Locale(identifier: "en_US_POSIX"), wgs84.longitude))
+        XCTAssertEqual(values["lat"], String(format: "%.8f", locale: Locale(identifier: "en_US_POSIX"), wgs84.latitude))
+        XCTAssertEqual(values["acc"], "20")
+        XCTAssertEqual(values["randomRadius"], "0")
     }
 
     func testBrokenSaveQueryFailsWithoutCheckingVersion() async {
@@ -110,7 +92,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         let manager = ThirdPartyProxyManager(requester: requester)
 
         do {
-            _ = try await manager.validateConnection()
+            _ = try await manager.query()
             XCTFail("expected interception failure")
         } catch {
             XCTAssertEqual(error as? ThirdPartyProxyError, .moduleNotIntercepted)
@@ -189,16 +171,11 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
 
 private final class FakeThirdPartyRequester: ThirdPartyProxyRequesting {
     private let data: Data
-    private let versionData: Data
     private(set) var lastURL: URL?
     private(set) var requestedURLs: [URL] = []
 
-    init(
-        body: String,
-        versionBody: String = #"{"success":true,"moduleVersion":"1.0.0","protocolVersion":1,"capabilities":["wifi","cellTower","arpc","marker","synthetic","bare","motionSimulation"]}"#
-    ) {
+    init(body: String) {
         data = Data(body.utf8)
-        versionData = Data(versionBody.utf8)
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
@@ -210,6 +187,6 @@ private final class FakeThirdPartyRequester: ThirdPartyProxyRequesting {
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
         )!
-        return (request.url?.path == "/wloc-settings/version" ? versionData : data, response)
+        return (data, response)
     }
 }

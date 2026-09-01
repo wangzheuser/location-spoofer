@@ -9,21 +9,6 @@ struct ThirdPartyProxySettingsResponse: Decodable, Equatable {
     let motionSimulationEnabled: Bool?
 }
 
-struct ThirdPartyProxyVersionResponse: Decodable, Equatable {
-    let success: Bool
-    let moduleVersion: String
-    let protocolVersion: Int
-    let capabilities: Set<String>
-
-    static let requiredCapabilities: Set<String> = [
-        "wifi", "cellTower", "arpc", "marker", "synthetic", "bare", "motionSimulation"
-    ]
-
-    var isCompatible: Bool {
-        success && protocolVersion >= 1 && capabilities.isSuperset(of: Self.requiredCapabilities)
-    }
-}
-
 enum ThirdPartyProxyConnectionState: Equatable {
     case unknown
     case connected(active: Bool)
@@ -36,7 +21,6 @@ enum ThirdPartyProxyError: LocalizedError, Equatable {
     case rejected(String)
     case coordinateMismatch
     case network(String)
-    case moduleOutdated
 
     var errorDescription: String? {
         switch self {
@@ -50,18 +34,11 @@ enum ThirdPartyProxyError: LocalizedError, Equatable {
             return "第三方代理保存的坐标与当前选点不一致"
         case .network(let message):
             return "第三方代理请求失败：\(message)"
-        case .moduleOutdated:
-            return "模块版本过低，请重新导入模块"
         }
     }
 
     var recoverySuggestion: String {
-        switch self {
-        case .moduleOutdated:
-            return "删除旧模块后，重新复制并导入最新模块"
-        default:
-            return "检查模块、MITM、证书和代理/VPN连接"
-        }
+        return "检查模块、MITM、证书和代理/VPN连接"
     }
 
     static func recoverySuggestion(for error: Error) -> String {
@@ -88,11 +65,9 @@ final class ThirdPartyProxyManager: ObservableObject {
     ]
     static let interceptionHostnamesText = interceptionHostnames.joined(separator: ", ")
     static let configurationEndpoint = URL(string: "https://gs-loc.apple.com/wloc-settings/save")!
-    static let versionEndpoint = URL(string: "https://gs-loc.apple.com/wloc-settings/version")!
 
     @Published private(set) var connectionState: ThirdPartyProxyConnectionState = .unknown
     @Published private(set) var activeSettings: ThirdPartyProxySettingsResponse?
-    @Published private(set) var moduleUpdateRecommended = false
     @Published private(set) var isRequesting = false
     private let requester: any ThirdPartyProxyRequesting
 
@@ -127,7 +102,8 @@ final class ThirdPartyProxyManager: ObservableObject {
         let response = try await perform(action: .save(
             latitude: wgs84.latitude,
             longitude: wgs84.longitude,
-            accuracy: favorite.accuracy
+            accuracy: favorite.accuracy,
+            randomRadius: RandomRadiusStore.shared.isEnabled ? RandomRadiusStore.shared.radius : 0
         ))
         guard response.success else {
             throw ThirdPartyProxyError.rejected(response.error ?? "第三方代理拒绝保存坐标")
@@ -146,72 +122,6 @@ final class ThirdPartyProxyManager: ObservableObject {
             "accuracy": String(favorite.accuracy)
         ])
         return response
-    }
-
-    func updateMotionSimulation(_ enabled: Bool) async throws -> ThirdPartyProxySettingsResponse {
-        // Upstream Yu9191/wloc scripts do not implement motion-state simulation,
-        // so this can never succeed in third-party mode.
-        RuntimeLogger.warning("APP", "ThirdPartyProxy", "第三方模式不支持运动状态模拟", details: [
-            "请求动作": "motion simulation",
-            "处理建议": "运动状态模拟仅在 APP模式（内置代理）下可用"
-        ])
-        throw ThirdPartyProxyError.moduleOutdated
-    }
-
-    func validateConnection() async throws -> ThirdPartyProxySettingsResponse {
-        try await query()
-    }
-
-    func validateVersion() async throws -> ThirdPartyProxyVersionResponse {
-        guard !isRequesting else {
-            throw ThirdPartyProxyError.rejected("已有第三方代理请求正在执行")
-        }
-        isRequesting = true
-        defer { isRequesting = false }
-
-        var request = URLRequest(url: Self.versionEndpoint)
-        request.httpMethod = "GET"
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        request.timeoutInterval = 8
-        do {
-            let (data, response) = try await requester.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                  let version = try? JSONDecoder().decode(ThirdPartyProxyVersionResponse.self, from: data),
-                  version.isCompatible else {
-                throw ThirdPartyProxyError.moduleOutdated
-            }
-            RuntimeLogger.info("APP", "ThirdPartyProxy", "第三方模块版本检测通过", details: [
-                "模块版本": version.moduleVersion,
-                "协议版本": String(version.protocolVersion),
-                "能力": version.capabilities.sorted().joined(separator: ",")
-            ])
-            return version
-        } catch let error as ThirdPartyProxyError {
-            throw error
-        } catch {
-            throw ThirdPartyProxyError.network(error.localizedDescription)
-        }
-    }
-
-    @discardableResult
-    func refreshAdvancedFeatureAvailability() async -> Bool {
-        do {
-            _ = try await validateVersion()
-            moduleUpdateRecommended = false
-            return true
-        } catch {
-            moduleUpdateRecommended = true
-            RuntimeLogger.warning(
-                "APP",
-                "ThirdPartyProxy",
-                "第三方模块不支持高级功能",
-                details: [
-                    "版本检测": error.localizedDescription,
-                    "处理建议": "基础坐标功能可继续使用；更新模块后可使用运动状态模拟"
-                ]
-            )
-            return false
-        }
     }
 
     func clear() async throws {
@@ -238,7 +148,7 @@ final class ThirdPartyProxyManager: ObservableObject {
 
     private enum Action {
         case query
-        case save(latitude: Double, longitude: Double, accuracy: Int)
+        case save(latitude: Double, longitude: Double, accuracy: Int, randomRadius: Double)
         case clear
     }
 
@@ -255,11 +165,12 @@ final class ThirdPartyProxyManager: ObservableObject {
             components.queryItems = [URLQueryItem(name: "action", value: "query")]
         case .clear:
             components.queryItems = [URLQueryItem(name: "action", value: "clear")]
-        case .save(let latitude, let longitude, let accuracy):
+        case .save(let latitude, let longitude, let accuracy, let randomRadius):
             components.queryItems = [
                 URLQueryItem(name: "lon", value: String(format: "%.8f", locale: Locale(identifier: "en_US_POSIX"), longitude)),
                 URLQueryItem(name: "lat", value: String(format: "%.8f", locale: Locale(identifier: "en_US_POSIX"), latitude)),
-                URLQueryItem(name: "acc", value: String(accuracy))
+                URLQueryItem(name: "acc", value: String(accuracy)),
+                URLQueryItem(name: "randomRadius", value: String(randomRadius))
             ]
         }
         guard let url = components.url else { throw ThirdPartyProxyError.invalidResponse }

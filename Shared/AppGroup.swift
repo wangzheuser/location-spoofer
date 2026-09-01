@@ -67,6 +67,36 @@ final class MotionSimulationStore: ObservableObject {
 }
 
 @MainActor
+final class RandomRadiusStore: ObservableObject {
+    static let shared = RandomRadiusStore()
+
+    private enum Key {
+        static let isEnabled = "randomRadius.isEnabled"
+        static let radius = "randomRadius.radius"
+    }
+
+    @Published private(set) var isEnabled: Bool
+    @Published private(set) var radius: Double
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = AppGroup.defaults) {
+        self.defaults = defaults
+        isEnabled = defaults.bool(forKey: Key.isEnabled)
+        radius = defaults.object(forKey: Key.radius) as? Double ?? 50
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        isEnabled = enabled
+        defaults.set(enabled, forKey: Key.isEnabled)
+    }
+
+    func setRadius(_ radius: Double) {
+        self.radius = radius
+        defaults.set(radius, forKey: Key.radius)
+    }
+}
+
+@MainActor
 final class ThirdPartyModuleSourceStore: ObservableObject {
     static let shared = ThirdPartyModuleSourceStore()
 

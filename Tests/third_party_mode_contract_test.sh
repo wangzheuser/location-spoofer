@@ -67,43 +67,19 @@ grep -q 'Label("查看诊断日志"' "$SETUP" \
   || fail "third-party connection failure must expose the diagnostics action"
 ! grep -q 'setupActionError = error.localizedDescription' "$SETUP" \
   || fail "third-party connection failure must not use the generic failure alert"
-grep -q 'let response = try await thirdPartyProxy.validateConnection()' "$SETUP" \
-  || fail "the import page must validate the legacy save/query endpoint"
-grep -A20 'let response = try await thirdPartyProxy.validateConnection()' "$SETUP" \
-  | grep -q 'refreshAdvancedFeatureAvailability()' \
-  || fail "the import page must also probe advanced module capabilities"
-grep -A20 'let response = try await thirdPartyProxy.validateConnection()' "$SETUP" \
-  | grep -q 'motionSimulation.setEnabled(false)' \
-  || fail "an incompatible module must turn motion simulation off without failing basic setup"
-grep -A20 'let response = try await thirdPartyProxy.validateConnection()' "$SETUP" | grep -q 'onComplete()' \
+grep -q 'let response = try await thirdPartyProxy.query()' "$SETUP" \
+  || fail "the import page must validate the save/query endpoint"
+grep -A20 'let response = try await thirdPartyProxy.query()' "$SETUP" | grep -q 'onComplete()' \
   || fail "a successful third-party connection test must close setup immediately"
 grep -q 'components.queryItems = \[URLQueryItem(name: "action", value: "query")\]' "$MANAGER" \
   || fail "the connection test must preserve the established save?action=query contract"
-grep -q 'thirdPartyProxy.moduleUpdateRecommended' "$SETTINGS" \
-  || fail "Settings must react to legacy module compatibility mode"
-grep -q '当前模块版本较旧，基础坐标功能仍可继续使用' "$SETTINGS" \
-  || fail "Settings must explain that legacy modules retain basic coordinate support"
-! grep -A8 'Toggle("运动状态模拟"' "$SETTINGS" | grep -q 'thirdPartyProxy.moduleUpdateRecommended' \
-  || fail "legacy module compatibility must turn motion simulation off without disabling its toggle"
-grep -q 'refreshAdvancedFeatureAvailability' "$SETTINGS" \
-  || fail "Settings must probe advanced module availability independently"
-grep -A18 'guard thirdPartyProxy.activeSettings?.success == true else' "$SETTINGS" \
-  | grep -q 'refreshAdvancedFeatureAvailability()' \
-  || fail "enabling inactive third-party motion simulation must validate the version endpoint first"
-grep -A18 'guard thirdPartyProxy.activeSettings?.success == true else' "$SETTINGS" \
-  | grep -q 'motionSimulation.setEnabled(true)' \
-  || fail "inactive third-party motion simulation may enable only after version validation succeeds"
-grep -q 'proxyOperationAlertTitle = "无法开启运动状态模拟"' "$SETTINGS" \
-  || fail "motion simulation must show a dedicated failure alert when version validation fails"
-grep -q '请重新导入最新模块脚本后再开启' "$SETTINGS" \
-  || fail "motion simulation failure must tell the user to update the module script"
-test "$(grep -c 'presentMotionSimulationModuleUpdateAlert()' "$SETTINGS")" -ge 3 \
-  || fail "inactive and active motion simulation paths must share the module-update alert"
-grep -q 'onChange(of: thirdPartyProxy.moduleUpdateRecommended)' "$SETTINGS" \
-  || fail "Settings must react when an installed module becomes incompatible"
-grep -A5 'private func disableUnsupportedThirdPartyMotionSimulation()' "$SETTINGS" \
-  | grep -q 'motionSimulation.setEnabled(false)' \
-  || fail "unsupported third-party modules must force motion simulation off before disabling the toggle"
+grep -B4 'Toggle("运动状态模拟"' "$SETTINGS" | grep -q 'runtimeMode.mode == .localWiFi' \
+  || fail "the motion-state toggle must only appear in APP mode"
+grep -B4 'Toggle("随机扰动"' "$SETTINGS" | grep -q 'runtimeMode.mode == .thirdParty' \
+  || fail "the random-perturbation toggle must only appear in third-party mode"
+! grep -q 'validateVersion\|refreshAdvancedFeatureAvailability\|moduleUpdateRecommended' \
+    "$SETUP" "$SETTINGS" "$MANAGER" \
+  || fail "script version detection must be removed from the app"
 ! grep -q 'thirdPartyTestResult?.success' "$SETUP" \
   || fail "a successful third-party test must not leave a separate completion state"
 grep -q 'setupStep = \.thirdPartyImport' "$ROOT/App/SetupCoordinator.swift" \

@@ -52,7 +52,6 @@ struct FirstSetupView: View {
     @ObservedObject private var runtimeMode = ProxyRuntimeModeStore.shared
     @ObservedObject private var thirdPartyProxy = ThirdPartyProxyManager.shared
     @ObservedObject private var thirdPartyClient = ThirdPartyProxyClientStore.shared
-    @ObservedObject private var motionSimulation = MotionSimulationStore.shared
     @State private var copiedSubscriptionURL = false
     @State private var copiedMITMHostname = false
     @State private var screenshotPreview: SetupScreenshotPreview?
@@ -848,17 +847,12 @@ struct FirstSetupView: View {
         Task { @MainActor in
             defer { isVerifying = false }
             do {
-                let response = try await thirdPartyProxy.validateConnection()
-                let advancedFeaturesAvailable = await thirdPartyProxy.refreshAdvancedFeatureAvailability()
-                if !advancedFeaturesAvailable {
-                    motionSimulation.setEnabled(false)
-                }
+                let response = try await thirdPartyProxy.query()
                 let elapsedMilliseconds = Int(Date().timeIntervalSince(startedAt) * 1_000)
                 RuntimeLogger.info("APP", "ThirdPartyProxy", "第三方代理连接检测通过", details: [
                     "当前客户端": client.name,
                     "请求动作": "WLOC query",
                     "连接状态": response.latitude == nil || response.longitude == nil ? "已连接，无保存坐标" : "已连接，有保存坐标",
-                    "运动状态模拟": advancedFeaturesAvailable ? "支持" : "不支持，已关闭",
                     "耗时毫秒": String(elapsedMilliseconds)
                 ])
                 onComplete()
