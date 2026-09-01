@@ -127,8 +127,7 @@ final class ThirdPartyProxyManager: ObservableObject {
         let response = try await perform(action: .save(
             latitude: wgs84.latitude,
             longitude: wgs84.longitude,
-            accuracy: favorite.accuracy,
-            motionEnabled: MotionSimulationStore.shared.isEnabled
+            accuracy: favorite.accuracy
         ))
         guard response.success else {
             throw ThirdPartyProxyError.rejected(response.error ?? "第三方代理拒绝保存坐标")
@@ -150,25 +149,13 @@ final class ThirdPartyProxyManager: ObservableObject {
     }
 
     func updateMotionSimulation(_ enabled: Bool) async throws -> ThirdPartyProxySettingsResponse {
-        guard let current = activeSettings,
-              let latitude = current.latitude,
-              let longitude = current.longitude else {
-            throw ThirdPartyProxyError.rejected("第三方虚拟定位尚未开启")
-        }
-        guard await refreshAdvancedFeatureAvailability() else {
-            throw ThirdPartyProxyError.moduleOutdated
-        }
-        let response = try await perform(action: .save(
-            latitude: latitude,
-            longitude: longitude,
-            accuracy: current.accuracy ?? 25,
-            motionEnabled: enabled
-        ))
-        guard response.success else {
-            throw ThirdPartyProxyError.rejected(response.error ?? "第三方代理拒绝更新运动状态")
-        }
-        activeSettings = response
-        return response
+        // Upstream Yu9191/wloc scripts do not implement motion-state simulation,
+        // so this can never succeed in third-party mode.
+        RuntimeLogger.warning("APP", "ThirdPartyProxy", "第三方模式不支持运动状态模拟", details: [
+            "请求动作": "motion simulation",
+            "处理建议": "运动状态模拟仅在 APP模式（内置代理）下可用"
+        ])
+        throw ThirdPartyProxyError.moduleOutdated
     }
 
     func validateConnection() async throws -> ThirdPartyProxySettingsResponse {
@@ -251,7 +238,7 @@ final class ThirdPartyProxyManager: ObservableObject {
 
     private enum Action {
         case query
-        case save(latitude: Double, longitude: Double, accuracy: Int, motionEnabled: Bool)
+        case save(latitude: Double, longitude: Double, accuracy: Int)
         case clear
     }
 
@@ -268,15 +255,11 @@ final class ThirdPartyProxyManager: ObservableObject {
             components.queryItems = [URLQueryItem(name: "action", value: "query")]
         case .clear:
             components.queryItems = [URLQueryItem(name: "action", value: "clear")]
-        case .save(let latitude, let longitude, let accuracy, let motionEnabled):
+        case .save(let latitude, let longitude, let accuracy):
             components.queryItems = [
                 URLQueryItem(name: "lon", value: String(format: "%.8f", locale: Locale(identifier: "en_US_POSIX"), longitude)),
                 URLQueryItem(name: "lat", value: String(format: "%.8f", locale: Locale(identifier: "en_US_POSIX"), latitude)),
-                URLQueryItem(name: "acc", value: String(accuracy)),
-                URLQueryItem(
-                    name: "motion",
-                    value: motionEnabled ? "1" : "0"
-                )
+                URLQueryItem(name: "acc", value: String(accuracy))
             ]
         }
         guard let url = components.url else { throw ThirdPartyProxyError.invalidResponse }
@@ -309,8 +292,6 @@ final class ThirdPartyProxyManager: ObservableObject {
 }
 
 enum ThirdPartyProxyClient: String, CaseIterable, Identifiable {
-    static let moduleSubscriptionVersion = "1.0.1"
-
     case shadowrocket
     case surge
     case quantumultX
@@ -347,26 +328,21 @@ enum ThirdPartyProxyClient: String, CaseIterable, Identifiable {
 
     @MainActor
     var subscriptionURL: URL {
-        let url: String
-        let directory = ThirdPartyModuleSourceStore.shared.useMirror
-            ? "Resources/ThirdPartyProxyModules"
-            : "ThirdParty/WlocScripts/modules/direct"
-        let prefix = ThirdPartyModuleSourceStore.shared.useMirror
-            ? "https://gh-proxy.org/https://raw.githubusercontent.com/xweiba/location-spoofer/main/"
-            : "https://raw.githubusercontent.com/xweiba/location-spoofer/main/"
+        // Third-party modules are served directly from the upstream Yu9191/wloc
+        // repository (mirror via gh-proxy when enabled). We no longer maintain
+        // project-owned module copies, so the URL tracks upstream releases.
+        let fileName: String
         switch self {
-        case .surge, .egern:
-            url = "\(prefix)\(directory)/wloc.sgmodule"
-        case .quantumultX:
-            url = "\(prefix)\(directory)/wloc.conf"
-        case .loon:
-            url = "\(prefix)\(directory)/wloc.lpx"
-        case .stash:
-            url = "\(prefix)\(directory)/wloc.stoverride"
-        case .shadowrocket:
-            url = "\(prefix)\(directory)/wloc.module"
+        case .surge, .egern: fileName = "wloc.sgmodule"
+        case .quantumultX: fileName = "wloc.conf"
+        case .loon: fileName = "wloc.lpx"
+        case .stash: fileName = "wloc.stoverride"
+        case .shadowrocket: fileName = "wloc.module"
         }
-        return URL(string: "\(url)?v=\(Self.moduleSubscriptionVersion)")!
+        let base = ThirdPartyModuleSourceStore.shared.useMirror
+            ? "https://gh-proxy.org/https://raw.githubusercontent.com/Yu9191/wloc/refs/heads/main/modules/\(fileName)"
+            : "https://raw.githubusercontent.com/Yu9191/wloc/refs/heads/main/modules/\(fileName)"
+        return URL(string: base)!
     }
 
     var launchURL: URL? {

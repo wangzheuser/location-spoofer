@@ -394,8 +394,22 @@ struct FirstSetupView: View {
         }
     }
 
+    private var thirdPartyMITMWarning: some View {
+        Label {
+            Text("iOS 27 beta 6 起，系统已禁止对 gs-loc.apple.com 进行 MITM 拦截。该版本及之后的 beta 版本暂时无法使用本项目，等待后续适配方案。")
+                .font(.footnote)
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+        }
+        .foregroundStyle(.orange)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     private var thirdPartyClientStep: some View {
         VStack(alignment: .leading, spacing: 16) {
+            thirdPartyMITMWarning
             if !setup.message.isEmpty {
                 Label(setup.message, systemImage: "exclamationmark.triangle.fill")
                     .font(.footnote)
@@ -476,6 +490,7 @@ struct FirstSetupView: View {
     private var thirdPartyImportStep: some View {
         let client = thirdPartyClient.selectedClient
         return VStack(alignment: .leading, spacing: 16) {
+            thirdPartyMITMWarning
             if showThirdPartyRepairReason {
                 Label(
                     "检测到第三方代理连接异常，请检查模块、MITM 和代理连接后重新检测。",

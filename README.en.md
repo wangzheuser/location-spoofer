@@ -9,6 +9,9 @@ An open-source project for **iOS location-service research, software development
 The project uses either an on-device proxy or a third-party proxy client to simulate selected Apple location-service
 responses in a controlled test environment.
 
+> ⚠️ **Starting with iOS 27 beta 6, the system blocks MITM interception of `gs-loc.apple.com`.** This project is
+> temporarily unusable on that version and later betas until a workaround is found.
+
 [![iOS 15+](https://img.shields.io/badge/iOS-15%2B-111111?logo=apple)](project.yml)
 [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138)](project.yml)
 [![Go 1.23+](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go)](Core/go.mod)

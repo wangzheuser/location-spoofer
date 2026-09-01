@@ -9,7 +9,6 @@ MANAGER="$ROOT/Shared/ThirdPartyProxyManager.swift"
 CONTENT="$ROOT/App/ContentView.swift"
 SETUP="$ROOT/App/FirstSetupView.swift"
 SETTINGS="$ROOT/App/SettingsView.swift"
-MODULES="$ROOT/Resources/ThirdPartyProxyModules"
 
 grep -q 'return "APP模式"' "$MODE" || fail "APP mode display name is missing"
 grep -q 'return "第三方代理模式"' "$MODE" || fail "third-party mode display name is missing"
@@ -38,14 +37,8 @@ grep -Fq '保存：GET ?lon=<经度>&lat=<纬度>&acc=<精度>' "$SETUP" \
 grep -Fq '清除：GET ?action=clear' "$SETUP" \
   || fail "client integration guidance must document the clear action"
 
-for file in wloc.module wloc.sgmodule wloc.conf wloc.lpx wloc.stoverride; do
-  test -s "$MODULES/$file" || fail "missing bundled module: $file"
-  grep -q 'gs-loc.apple.com' "$MODULES/$file" \
-    || fail "$file must include gs-loc.apple.com in its MITM hostnames"
-  grep -q 'gs-loc-cn.apple.com' "$MODULES/$file" \
-    || fail "$file must include gs-loc-cn.apple.com in its MITM hostnames"
-done
-
+grep -q 'Yu9191/wloc/refs/heads/main/modules' "$MANAGER" \
+  || fail "third-party subscription must point at upstream Yu9191 modules"
 grep -q 'wloc.sgmodule' "$MANAGER" || fail "Surge/Egern module mapping is missing"
 grep -q 'wloc.stoverride' "$MANAGER" || fail "Stash must use .stoverride directly"
 grep -q 'shadowrocket://' "$MANAGER" || fail "Shadowrocket launch URL is missing"
