@@ -64,7 +64,13 @@ func isWlocHost(host string) bool {
 			host = h
 		}
 	}
-	return host == "gs-loc.apple.com" || host == "gs-loc-cn.apple.com"
+	switch host {
+	case "gs-loc.apple.com", "gs-loc-cn.apple.com",
+		"gsp-ssl.ls.apple.com", "bluedot.is.autonavi.com",
+		"bluedot.is.autonavi.com.gds.alibabadns.com":
+		return true
+	}
+	return false
 }
 
 func newProxy(cert *tls.Certificate) *goproxy.ProxyHttpServer {

@@ -12,9 +12,15 @@ module URL the App copies:
 - enabled by default: `gh-proxy.org` in front of GitHub Raw;
 - disabled: GitHub Raw directly.
 
-The App appends the module version as a query parameter, such as `?v=1.0.0`.
+The App appends the module version as a query parameter, such as `?v=1.0.1`.
 Increment this value whenever an existing module path changes so proxy clients
 do not reuse a previously cached subscription body.
+
+The Apple WLOC response rule and MITM hostname list cover all known network
+location endpoints: `gs-loc.apple.com`, `gs-loc-cn.apple.com`,
+`gsp-ssl.ls.apple.com`, `bluedot.is.autonavi.com`, and
+`bluedot.is.autonavi.com.gds.alibabadns.com`. The settings endpoint
+(`/wloc-settings/*`) stays scoped to the `gs-loc` hostnames.
 
 | Module file | Client |
 |---|---|
@@ -46,11 +52,11 @@ versioned protocol and motion setting.
 Current bundled module SHA-256 values:
 
 ```text
-263f3eae0ec4ef19d03eefa58f28e6545cccbc6a2d32c5e1d3493ba207ca7605  wloc.conf
-c0755a9edb2a1686190d12d156e9aa53693e15721efc4a29f9a06c2bf3115a5f  wloc.lpx
-06a426e4f37828d18b80abea04a8ade4fa7f93817cb1e37928c52da3e46f693a  wloc.module
-f6b9fc51c4d3c4fca837ff896dbe544f99604d9646f05841bad82bfdfdf5c4fa  wloc.sgmodule
-100e569e6ca3183f7da15fbb38ddb5cd91178488c0d9774acabc2721fa85a58c  wloc.stoverride
+1987adf691738544ee44ee67749872ac3ef36efbe54cd8751cf874eaa029d7f4  wloc.conf
+5562020a8de1a25e3162584fa77c50d8c7e1052cdc08c068180fc2e46d69e7da  wloc.lpx
+cad43570ffb0a16cf3ba7d06d9c0d99ea1b7994ff665eea192011961f1385e87  wloc.module
+96be7cc7e710436ffa320ccc2e2d45d55d9db7fe26dc6a5bab1fa54333102a99  wloc.sgmodule
+0cefbabf294acff3382c575578ed7e4c84fa16242cf0808df581aec004ca8058  wloc.stoverride
 ```
 
 The project acknowledges [Yu9191/wloc](https://github.com/Yu9191/wloc) as a

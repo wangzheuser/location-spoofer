@@ -52,13 +52,13 @@ grep -q 'shadowrocket://' "$MANAGER" || fail "Shadowrocket launch URL is missing
 for scheme in surge quantumult-x loon stash egern; do
   grep -q "${scheme}://" "$MANAGER" || fail "$scheme launch URL is missing"
 done
-grep -q '复制两个解密域名' "$SETUP" || fail "all clients must expose both MITM hostnames"
-grep -q 'gs-loc.apple.com 和 gs-loc-cn.apple.com' "$SETUP" \
-  || fail "setup guidance must name both Apple location hostnames"
+grep -q '复制解密域名' "$SETUP" || fail "all clients must expose the MITM hostname copy action"
+grep -q '配置时请复制下方全部解密域名' "$SETUP" \
+  || fail "setup guidance must direct users to copy all Apple location hostnames"
 grep -q 'ThirdPartyProxyManager.interceptionHostnamesText' "$SETUP" \
-  || fail "setup hostname copy actions must use the shared two-host value"
+  || fail "setup hostname copy actions must use the shared interception hostname value"
 grep -q 'ThirdPartyProxyManager.interceptionHostnamesText' "$SETTINGS" \
-  || fail "Settings must expose the shared two-host copy action"
+  || fail "Settings must expose the shared interception hostname copy action"
 grep -q '配置 → 模块' "$SETUP" || fail "Shadowrocket module import guidance is missing"
 grep -q 'HTTPS 解密' "$SETUP" || fail "Shadowrocket HTTPS decryption guidance is missing"
 ! grep -q '当前可测试' "$SETUP" || fail "Shadowrocket must not show the obsolete current-test label"
